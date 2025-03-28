@@ -322,8 +322,8 @@ def clang_tidy_action(ctx, compilation_context, executable, srcs, stdout, exit_c
     intermediate_outputs_exit_code = []
     # create an action for each file
     for src in srcs:
-        out_intermediate_stdout = ctx.actions.declare_file(stdout.short_path+src.short_path+".stdout")
-        out_intermediate_exit_code = ctx.actions.declare_file(exit_code.short_path + src.short_path+".exit_code")
+        out_intermediate_stdout = ctx.actions.declare_file(stdout.short_path+".{}.stdout".format(len(intermediate_outputs_stdout)))
+        out_intermediate_exit_code = ctx.actions.declare_file(exit_code.short_path+".{}.exit_code".format(len(intermediate_outputs_exit_code)))
         clang_tidy_args = _get_args(ctx, compilation_context, [src])
         compiler_args = ctx.actions.args()
         compiler_args.add_all(_get_compiler_args(ctx, compilation_context, [src]))
@@ -341,6 +341,7 @@ def clang_tidy_action(ctx, compilation_context, executable, srcs, stdout, exit_c
         )
         intermediate_outputs_stdout.append(out_intermediate_stdout)
         intermediate_outputs_exit_code.append(out_intermediate_exit_code)
+
     # emit
     ctx.actions.run_shell(
         inputs = intermediate_outputs_stdout,
