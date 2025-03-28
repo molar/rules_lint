@@ -309,10 +309,8 @@ def clang_tidy_action(ctx, compilation_context, executable, srcs, stdout, exit_c
 
     outputs = [stdout]
     env = _get_env(ctx, srcs)
-    env["CLANG_TIDY__STDOUT_STDERR_OUTPUT_FILE"] = stdout.path
 
     if exit_code:
-        env["CLANG_TIDY__EXIT_CODE_OUTPUT_FILE"] = exit_code.path
         outputs.append(exit_code)
 
     # pass compiler args via a params file. The command line may already be long due to
@@ -323,7 +321,10 @@ def clang_tidy_action(ctx, compilation_context, executable, srcs, stdout, exit_c
     # create an action for each file
     for src in srcs:
         out_intermediate_stdout = ctx.actions.declare_file(stdout.short_path+".{}.stdout".format(len(intermediate_outputs_stdout)))
-        out_intermediate_exit_code = ctx.actions.declare_file(exit_code.short_path+".{}.exit_code".format(len(intermediate_outputs_exit_code)))
+        env["CLANG_TIDY__STDOUT_STDERR_OUTPUT_FILE"] = out_intermediate_stdout.path
+        if exit_code:
+            out_intermediate_exit_code = ctx.actions.declare_file(exit_code.short_path+".{}.exit_code".format(len(intermediate_outputs_exit_code)))
+            env["CLANG_TIDY__EXIT_CODE_OUTPUT_FILE"] = out_intermediate_exit_code.path
         clang_tidy_args = _get_args(ctx, compilation_context, [src])
         compiler_args = ctx.actions.args()
         compiler_args.add_all(_get_compiler_args(ctx, compilation_context, [src]))
@@ -331,7 +332,7 @@ def clang_tidy_action(ctx, compilation_context, executable, srcs, stdout, exit_c
 
         ctx.actions.run_shell(
             inputs = _gather_inputs(ctx, compilation_context, [src]),
-            outputs = [out_intermediate_stdout,out_intermediate_exit_code],
+            outputs = [out_intermediate_stdout,]+([out_intermediate_exit_code] if exit_code else []),
             tools = [executable._clang_tidy_wrapper, executable._clang_tidy, find_cpp_toolchain(ctx).all_files],
             command = executable._clang_tidy_wrapper.path + " $@",
             arguments = [executable._clang_tidy.path] + clang_tidy_args + ["--", compiler_args],
@@ -340,7 +341,8 @@ def clang_tidy_action(ctx, compilation_context, executable, srcs, stdout, exit_c
             progress_message = "Linting %{label} with clang-tidy",
         )
         intermediate_outputs_stdout.append(out_intermediate_stdout)
-        intermediate_outputs_exit_code.append(out_intermediate_exit_code)
+        if exit_code:
+            intermediate_outputs_exit_code.append(out_intermediate_exit_code)
 
     # emit
     ctx.actions.run_shell(
@@ -348,11 +350,12 @@ def clang_tidy_action(ctx, compilation_context, executable, srcs, stdout, exit_c
         outputs = [stdout],
         command = "cat {} > {}".format(" ".join([f.path for f in intermediate_outputs_stdout]),stdout.path)
     )
-    ctx.actions.run_shell(
-        inputs = intermediate_outputs_exit_code,
-        outputs = [exit_code],
-        command = "cat {} | sort -nr | head -n 1 > {}".format(" ".join([f.path for f in intermediate_outputs_exit_code]),exit_code.path)
-    )
+    if exit_code:
+        ctx.actions.run_shell(
+            inputs = intermediate_outputs_exit_code,
+            outputs = [exit_code],
+            command = "cat {} | sort -nr | head -n 1 > {}".format(" ".join([f.path for f in intermediate_outputs_exit_code]),exit_code.path)
+        )
 
 def clang_tidy_fix(ctx, compilation_context, executable, srcs, patch, stdout, exit_code):
     """Create a Bazel Action that spawns clang-tidy with --fix.
